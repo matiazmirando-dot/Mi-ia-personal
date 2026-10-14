@@ -70,7 +70,7 @@ with st.sidebar:
     except Exception as err_clean:
       st.error(f"Error al limpiar la base de datos: {err_clean}")
 
-# Inicialización segura de variables de conexión e historial
+# Inicialización y sincronización segura con la base de datos en cada ejecución
 db_messages: list = []
 conn = None
 
@@ -91,11 +91,14 @@ try:
   )
   if not df_messages.empty:
     db_messages = df_messages.to_dict("records")
-except Exception:
-  pass
+except Exception as db_err:
+  st.warning(
+      f"⚠️ Aviso de conexión a Base de Datos: {db_err}. La app funcionará en"
+      " memoria temporal."
+  )
 
-if "messages" not in st.session_state:
-  st.session_state.messages = db_messages
+# Sincronizamos el estado de la sesión directamente con la BD para evitar desfaces
+st.session_state.messages = db_messages
 
 if not api_key:
   st.info(
@@ -124,10 +127,7 @@ else:
       st.markdown(message["content"])
 
   if prompt := st.chat_input("Escribe tu orden o dile algo a Ada..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-      st.markdown(prompt)
-
+    # Insertar mensaje del usuario en BD antes de hacer rerun lógico
     if conn is not None:
       try:
         with conn.session as s:
@@ -136,8 +136,11 @@ else:
               {"role": "user", "content": prompt},
           )
           s.commit()
-      except Exception:
-        pass
+      except Exception as e:
+        st.error(f"No se pudo guardar el mensaje del usuario en la BD: {e}")
+
+    with st.chat_message("user"):
+      st.markdown(prompt)
 
     with st.chat_message("assistant"):
       with st.spinner("Ada está procesando tu orden..."):
@@ -149,43 +152,52 @@ else:
               temperature=temperature,
               messages=[{"role": "system", "content": system_prompt}, *recent_messages],
           )
+
           reply = response.choices[0].message.content
-          st.markdown(reply)
 
-          st.session_state.messages.append({"role": "assistant", "content": reply})
+          if reply:
+            st.markdown(reply)
 
-          if conn is not None:
-            try:
-              with conn.session as s:
-                s.execute(
-                    "INSERT INTO messages (role, content) VALUES (:role, :content);",
-                    {"role": "assistant", "content": reply},
+            if conn is not None:
+              try:
+                with conn.session as s:
+                  s.execute(
+                      "INSERT INTO messages (role, content) VALUES (:role,"
+                      " :content);",
+                      {"role": "assistant", "content": reply},
+                  )
+                  s.commit()
+              except Exception as e:
+                st.error(
+                    f"No se pudo guardar la respuesta del asistente en la BD: {e}"
                 )
-                s.commit()
-            except Exception:
-              pass
 
-          if enable_voice:
-            b64_bytes = base64.b64encode(reply.encode("utf-8"))
-            b64_str = b64_bytes.decode("ascii")
+            # Síntesis de voz protegida y segura contra nulos
+            if enable_voice:
+              b64_bytes = base64.b64encode(reply.encode("utf-8"))
+              b64_str = b64_bytes.decode("ascii")
 
-            tts_script = (
-                "<script>"
-                "try {"
-                f'  var base64Str = "{b64_str}";'
-                "  var binStr = atob(base64Str);"
-                "  var bytes = new Uint8Array(binStr.length);"
-                "  for (var i = 0; i < binStr.length; i++) {"
-                "    bytes[i] = binStr.charCodeAt(i);"
-                "  }"
-                '  var decodedText = new TextDecoder("utf-8").decode(bytes);'
-                "  var msg = new SpeechSynthesisUtterance(decodedText);"
-                '  msg.lang = "es-ES";'
-                "  window.speechSynthesis.speak(msg);"
-                "} catch(e) { console.error(e); }"
-                "</script>"
+              tts_script = (
+                  "<script>"
+                  "try {"
+                  f'  var base64Str = "{b64_str}";'
+                  "  var binStr = atob(base64Str);"
+                  "  var bytes = new Uint8Array(binStr.length);"
+                  "  for (var i = 0; i < binStr.length; i++) {"
+                  "    bytes[i] = binStr.charCodeAt(i);"
+                  "  }"
+                  '  var decodedText = new TextDecoder("utf-8").decode(bytes);'
+                  "  var msg = new SpeechSynthesisUtterance(decodedText);"
+                  '  msg.lang = "es-ES";'
+                  "  window.speechSynthesis.speak(msg);"
+                  "} catch(e) { console.error(e); }"
+                  "</script>"
+              )
+              components.html(tts_script, height=0)
+          else:
+            st.warning(
+                "La IA devolvió una respuesta vacía. Intenta de nuevo."
             )
-            components.html(tts_script, height=0)
 
         except Exception as err_ai:
           st.error(
