@@ -1,3 +1,4 @@
+import streamlit as st
 # Configuración de la página
 st.set_page_config(page_title="Mi IA Personal - Ada", page_icon="🤖", layout="centered")
 
