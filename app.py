@@ -1,7 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import streamlit.components.v1 as components
-import json
+import unicodedata
 
 # Configuración de la página
 st.set_page_config(
@@ -152,12 +152,15 @@ else:
                     )
                     conn.session.commit()
 
-                    # Síntesis de voz segura utilizando json.dumps para evitar errores de tildes o caracteres especiales
+                    # Síntesis de voz segura: limpia acentos para evitar conflictos de codificación ASCII
                     if enable_voice:
-                        safe_reply = json.dumps(reply)
+                        nfkd_form = unicodedata.normalize('NFKD', reply)
+                        safe_voice_text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+                        safe_voice_text = safe_voice_text.replace('"', '\\"').replace('\n', ' ')
+                        
                         tts_script = f"""
                         <script>
-                        var msg = new SpeechSynthesisUtterance({safe_reply});
+                        var msg = new SpeechSynthesisUtterance("{safe_voice_text}");
                         msg.lang = "es-ES";
                         window.speechSynthesis.speak(msg);
                         </script>
