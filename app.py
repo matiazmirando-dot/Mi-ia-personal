@@ -1,6 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import streamlit.components.v1 as components
+import json
 
 # Configuración de la página
 st.set_page_config(
@@ -151,12 +152,12 @@ else:
                     )
                     conn.session.commit()
 
-                    # Síntesis de voz opcional mediante JavaScript (SpeechSynthesis)
+                    # Síntesis de voz segura utilizando json.dumps para evitar errores de tildes o caracteres especiales
                     if enable_voice:
-                        clean_reply = reply.replace('"', '\\"').replace('\n', ' ')
+                        safe_reply = json.dumps(reply)
                         tts_script = f"""
                         <script>
-                        var msg = new SpeechSynthesisUtterance("{clean_reply}");
+                        var msg = new SpeechSynthesisUtterance({safe_reply});
                         msg.lang = "es-ES";
                         window.speechSynthesis.speak(msg);
                         </script>
