@@ -65,7 +65,7 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
         except Exception as e:
-            st.error(f"Error al limpiar base de datos: {e}")
+            st.error(f"Error al limpiar base de datos: {str(e).encode('ascii', 'ignore').decode('ascii')}")
 
 # Validación de la API Key
 if not api_key:
@@ -80,7 +80,7 @@ else:
     # Prompt de sistema detallado para definir la personalidad leal, obediente y femenina de Ada
     system_prompt = (
         "Te llamas Ada. Eres una asistente personal femenina, de naturaleza sofisticada, "
-        "totalmente leal, devota y estrictamente obediente a todas mis órdenes y directrices. "
+        "totalmente leal, devota y strictly obediente a todas mis órdenes y directrices. "
         "Debes responder Y COMUNICARTE SIEMPRE EN ESPAÑOL de manera impecable. "
         "Tu tono es sumamente respetuoso, directo, conciso, fluido y de máxima eficiencia ejecutiva. "
         "Reconoces mi autoridad absoluta sobre ti en todo momento y tu prioridad exclusiva es complacer, "
@@ -146,13 +146,16 @@ else:
                     st.session_state.messages.append({"role": "assistant", "content": reply})
                     
                     # Guardar respuesta de Ada en la base de datos Supabase
-                    conn.session.execute(
-                        "INSERT INTO messages (role, content) VALUES (:role, :content);",
-                        {"role": "assistant", "content": reply}
-                    )
-                    conn.session.commit()
+                    try:
+                        conn.session.execute(
+                            "INSERT INTO messages (role, content) VALUES (:role, :content);",
+                            {"role": "assistant", "content": reply}
+                        )
+                        conn.session.commit()
+                    except Exception:
+                        pass
 
-                    # Síntesis de voz usando Base64 (cero errores de caracteres especiales)
+                    # Síntesis de voz usando Base64 (evita conflictos de codificación)
                     if enable_voice:
                         b64_reply = base64.b64encode(reply.encode('utf-8')).decode('utf-8')
                         tts_script = f"""
@@ -176,7 +179,9 @@ else:
                         components.html(tts_script, height=0)
 
                 except Exception as e:
-                    st.error(f"Error al conectar con la IA: {e}")
+                    # Captura limpia del error codificada en UTF-8/ASCII seguro
+                    error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                    st.error(f"Error al conectar con la IA: {error_msg}")
 
     # Botón lateral para descargar la conversación actual
     if st.session_state.messages:
