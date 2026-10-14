@@ -1,7 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import streamlit.components.v1 as components
-import unicodedata
+import base64
 
 # Configuración de la página
 st.set_page_config(
@@ -152,17 +152,25 @@ else:
                     )
                     conn.session.commit()
 
-                    # Síntesis de voz segura: limpia acentos para evitar conflictos de codificación ASCII
+                    # Síntesis de voz usando Base64 (cero errores de caracteres especiales)
                     if enable_voice:
-                        nfkd_form = unicodedata.normalize('NFKD', reply)
-                        safe_voice_text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-                        safe_voice_text = safe_voice_text.replace('"', '\\"').replace('\n', ' ')
-                        
+                        b64_reply = base64.b64encode(reply.encode('utf-8')).decode('utf-8')
                         tts_script = f"""
                         <script>
-                        var msg = new SpeechSynthesisUtterance("{safe_voice_text}");
-                        msg.lang = "es-ES";
-                        window.speechSynthesis.speak(msg);
+                        try {{
+                            var base64Str = "{b64_reply}";
+                            var binStr = atob(base64Str);
+                            var bytes = new Uint8Array(binStr.length);
+                            for (var i = 0; i < binStr.length; i++) {{
+                                bytes[i] = binStr.charCodeAt(i);
+                            }}
+                            var decodedText = new TextDecoder("utf-8").decode(bytes);
+                            var msg = new SpeechSynthesisUtterance(decodedText);
+                            msg.lang = "es-ES";
+                            window.speechSynthesis.speak(msg);
+                        }} catch(e) {{
+                            console.error(e);
+                        }}
                         </script>
                         """
                         components.html(tts_script, height=0)
